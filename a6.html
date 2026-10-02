@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>太空射擊遊戲</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #050817; color: #eaf6ff; font-family: system-ui, sans-serif; }
+        main { width: min(94vw, 720px); text-align: center; }
+        h1 { color: #83eaff; letter-spacing: .12em; }
+        p { color: #b5c9dc; }
+        canvas { display: block; width: 100%; border: 1px solid #315477; border-radius: 12px; background: #080e24; touch-action: none; }
+        button { padding: 9px 16px; border: 1px solid #5ce1ff; border-radius: 8px; color: #eafaff; background: #12304a; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>星際守衛</h1>
+        <p>方向鍵 / WASD 移動，空白鍵射擊；手機可拖曳並射擊。擊落敵機，保護飛船！</p>
+        <canvas id="game" width="700" height="460" aria-label="太空射擊遊戲"></canvas>
+        <p id="status">分數：0　生命：3</p>
+        <button id="restart" type="button">重新開始</button>
+    </main>
+    <script>
+        (() => {
+            const canvas = document.querySelector('#game'), ctx = canvas.getContext('2d');
+            const status = document.querySelector('#status'), keys = new Set();
+            let player, shots, enemies, stars, score, lives, frame, ended, firing, audio;
+            function tone(freq, duration = .08, type = 'sine') {
+                try {
+                    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+                    if (audio.state === 'suspended') audio.resume();
+                    const osc = audio.createOscillator(), gain = audio.createGain();
+                    osc.type = type; osc.frequency.value = freq; gain.gain.value = .07;
+                    gain.gain.exponentialRampToValueAtTime(.001, audio.currentTime + duration);
+                    osc.connect(gain).connect(audio.destination); osc.start(); osc.stop(audio.currentTime + duration);
+                } catch (_) { /* 音訊不可用時仍可遊玩 */ }
+            }
+            function reset() {
+                player = { x: 350, y: 410, cooldown: 0 };
+                shots = []; enemies = []; score = 0; lives = 3; frame = 0; ended = false;
+                stars = Array.from({ length: 75 }, () => ({ x: Math.random() * 700, y: Math.random() * 460, v: 1 + Math.random() * 2 }));
+                status.textContent = '分數：0　生命：3';
+            }
+            function update() {
+                frame++;
+                stars.forEach(s => { s.y += s.v; if (s.y > 460) { s.y = 0; s.x = Math.random() * 700; } });
+                if (ended) return;
+                if (keys.has('ArrowLeft') || keys.has('a')) player.x -= 4;
+                if (keys.has('ArrowRight') || keys.has('d')) player.x += 4;
+                if (keys.has('ArrowUp') || keys.has('w')) player.y -= 4;
+                if (keys.has('ArrowDown') || keys.has('s')) player.y += 4;
+                player.x = Math.max(16, Math.min(684, player.x)); player.y = Math.max(22, Math.min(442, player.y));
+                if ((keys.has(' ') || firing) && player.cooldown <= 0) {
+                    shots.push({ x: player.x, y: player.y - 15 }); player.cooldown = 13; tone(680, .06);
+                }
+                player.cooldown--;
+                if (frame % Math.max(22, 52 - Math.floor(score / 50)) === 0)
+                    enemies.push({ x: 20 + Math.random() * 660, y: -20, speed: 1.5 + Math.random() * 1.5 + score / 500, dead: false });
+                shots.forEach(b => b.y -= 7); enemies.forEach(e => e.y += e.speed);
+                for (const b of shots) for (const e of enemies) {
+                    if (!b.hit && !e.dead && Math.hypot(b.x - e.x, b.y - e.y) < 17) {
+                        b.hit = true; e.dead = true; score += 10; tone(180, .14, 'triangle');
+                    }
+                }
+                enemies.forEach(e => {
+                    if (!e.dead && Math.hypot(player.x - e.x, player.y - e.y) < 26) { e.dead = true; lives--; tone(110, .25, 'sawtooth'); }
+                    else if (!e.dead && e.y > 475) { e.dead = true; lives--; }
+                });
+                shots = shots.filter(b => !b.hit && b.y > -10); enemies = enemies.filter(e => !e.dead);
+                if (lives <= 0) { ended = true; tone(90, .5, 'sawtooth'); }
+                status.textContent = ended ? `遊戲結束！分數：${score}` : `分數：${score}　生命：${lives}`;
+            }
+            function draw() {
+                ctx.clearRect(0, 0, 700, 460);
+                ctx.fillStyle = '#fff'; stars.forEach(s => ctx.fillRect(s.x, s.y, 2, 2));
+                ctx.fillStyle = '#77f7ff'; shots.forEach(b => ctx.fillRect(b.x - 2, b.y - 8, 4, 12));
+                enemies.forEach(e => { ctx.fillStyle = '#ff5277'; ctx.beginPath(); ctx.moveTo(e.x, e.y + 14); ctx.lineTo(e.x - 14, e.y - 11); ctx.lineTo(e.x, e.y - 5); ctx.lineTo(e.x + 14, e.y - 11); ctx.fill(); });
+                ctx.fillStyle = '#55dfff'; ctx.beginPath(); ctx.moveTo(player.x, player.y - 17); ctx.lineTo(player.x - 14, player.y + 13); ctx.lineTo(player.x, player.y + 7); ctx.lineTo(player.x + 14, player.y + 13); ctx.fill();
+                if (ended) { ctx.fillStyle = '#fff'; ctx.font = 'bold 30px system-ui'; ctx.textAlign = 'center'; ctx.fillText('任務結束', 350, 230); }
+                requestAnimationFrame(draw);
+            }
+            window.addEventListener('keydown', e => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault(); keys.add(e.key); });
+            window.addEventListener('keyup', e => keys.delete(e.key));
+            function pointer(e) { const r = canvas.getBoundingClientRect(); player.x = (e.clientX - r.left) * 700 / r.width; player.y = (e.clientY - r.top) * 460 / r.height; }
+            canvas.addEventListener('pointerdown', e => { firing = true; canvas.setPointerCapture(e.pointerId); pointer(e); });
+            canvas.addEventListener('pointermove', e => { if (firing) pointer(e); });
+            canvas.addEventListener('pointerup', () => firing = false);
+            document.querySelector('#restart').addEventListener('click', reset);
+            reset(); setInterval(update, 1000 / 60); requestAnimationFrame(draw);
+        })();
+    </script>
+</body>
+</html>
